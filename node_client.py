@@ -7,32 +7,36 @@ from fastapi import FastAPI
 import uvicorn
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+import psutil
 
 ORCHESTRATOR_URL = "http://127.0.0.1:8000"
 NODE_IP = "127.0.0.1"
 NODE_PORT = 9000
+API_TOKEN = "BHARAT_GRID_ALPHA_TOKEN"
 
 node_id = str(uuid.uuid4())
 
 def register_node():
     payload = {
         "node_id": node_id,
-        "available_cpu": 2, 
-        "available_ram_gb": 4, 
+        "available_cpu": psutil.cpu_count(logical=True), 
+        "available_ram_gb": round(psutil.virtual_memory().total / (1024**3)), 
         "port": NODE_PORT,
         "ip_address": NODE_IP
     }
+    headers = {"x-api-token": API_TOKEN}
     try:
-        response = requests.post(f"{ORCHESTRATOR_URL}/api/nodes/register", json=payload)
+        response = requests.post(f"{ORCHESTRATOR_URL}/api/nodes/register", json=payload, headers=headers)
         response.raise_for_status()
         print(f"Registered with orchestrator successfully. Node ID: {node_id}")
     except Exception as e:
         print(f"Failed to register node: {e}")
 
 def heartbeat_loop():
+    headers = {"x-api-token": API_TOKEN}
     while True:
         try:
-            requests.post(f"{ORCHESTRATOR_URL}/api/nodes/heartbeat", json={"node_id": node_id})
+            requests.post(f"{ORCHESTRATOR_URL}/api/nodes/heartbeat", json={"node_id": node_id}, headers=headers)
         except Exception as e:
             pass # Suppress heartbeat errors to avoid spamming console if orchestrator is down
         time.sleep(10)
