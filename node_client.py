@@ -8,6 +8,8 @@ import uvicorn
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import psutil
+import argparse
+import socket
 
 ORCHESTRATOR_URL = "http://127.0.0.1:8000"
 NODE_IP = "127.0.0.1"
@@ -15,6 +17,16 @@ NODE_PORT = 9000
 API_TOKEN = "BHARAT_GRID_ALPHA_TOKEN"
 
 node_id = str(uuid.uuid4())
+
+def get_local_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
 
 def register_node():
     payload = {
@@ -72,7 +84,18 @@ def handle_deploy(command: DeployCommand):
         return {"status": "error", "message": str(e.stderr)}
 
 if __name__ == "__main__":
-    print("Starting Bharat-Grid Node Client Daemon...")
+    parser = argparse.ArgumentParser(description="Bharat-Grid Node Daemon")
+    parser.add_argument("--orchestrator", type=str, default="http://127.0.0.1:8000", help="URL of the Central Orchestrator")
+    parser.add_argument("--port", type=int, default=9000, help="Port to run the Node Client on")
+    args = parser.parse_args()
+
+    ORCHESTRATOR_URL = args.orchestrator
+    NODE_PORT = args.port
+    NODE_IP = get_local_ip()
+
+    print(f"Starting Bharat-Grid Node Client Daemon on {NODE_IP}:{NODE_PORT}...")
+    print(f"Connecting to Orchestrator at: {ORCHESTRATOR_URL}")
+    
     register_node()
     threading.Thread(target=heartbeat_loop, daemon=True).start()
     uvicorn.run(app, host="0.0.0.0", port=NODE_PORT)
