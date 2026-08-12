@@ -48,7 +48,9 @@ def heartbeat_loop():
     headers = {"x-api-token": API_TOKEN}
     while True:
         try:
-            requests.post(f"{ORCHESTRATOR_URL}/api/nodes/heartbeat", json={"node_id": node_id}, headers=headers)
+            cpu_usage = psutil.cpu_percent(interval=None)
+            payload = {"node_id": node_id, "cpu_usage_percent": cpu_usage}
+            requests.post(f"{ORCHESTRATOR_URL}/api/nodes/heartbeat", json=payload, headers=headers)
         except Exception as e:
             pass # Suppress heartbeat errors to avoid spamming console if orchestrator is down
         time.sleep(10)
