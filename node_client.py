@@ -10,12 +10,14 @@ from fastapi.middleware.cors import CORSMiddleware
 import psutil
 import argparse
 import socket
+import sys
 
 ORCHESTRATOR_URL = "http://127.0.0.1:8000"
 NODE_IP = "127.0.0.1"
 NODE_PORT = 9000
-API_TOKEN = "BHARAT_GRID_ALPHA_TOKEN"
+INITIAL_NODE_SECRET = "BHARAT_GRID_ALPHA_TOKEN"
 
+jwt_token = None
 node_id = str(uuid.uuid4())
 
 def get_local_ip():
@@ -28,6 +30,19 @@ def get_local_ip():
     except Exception:
         return "127.0.0.1"
 
+def authenticate():
+    global jwt_token
+    print("Attempting to securely authenticate with Orchestrator...")
+    try:
+        response = requests.post(f"{ORCHESTRATOR_URL}/api/auth/login", json={"node_secret": INITIAL_NODE_SECRET})
+        response.raise_for_status()
+        data = response.json()
+        jwt_token = data.get("access_token")
+        print("Authentication successful. JWT Token received.")
+    except Exception as e:
+        print(f"Authentication failed: {e}")
+        sys.exit(1)
+
 def register_node():
     payload = {
         "node_id": node_id,
@@ -36,7 +51,7 @@ def register_node():
         "port": NODE_PORT,
         "ip_address": NODE_IP
     }
-    headers = {"x-api-token": API_TOKEN}
+    headers = {"Authorization": f"Bearer {jwt_token}"}
     try:
         response = requests.post(f"{ORCHESTRATOR_URL}/api/nodes/register", json=payload, headers=headers)
         response.raise_for_status()
@@ -45,12 +60,19 @@ def register_node():
         print(f"Failed to register node: {e}")
 
 def heartbeat_loop():
-    headers = {"x-api-token": API_TOKEN}
+    global jwt_token
     while True:
         try:
+            headers = {"Authorization": f"Bearer {jwt_token}"}
             cpu_usage = psutil.cpu_percent(interval=None)
             payload = {"node_id": node_id, "cpu_usage_percent": cpu_usage}
-            requests.post(f"{ORCHESTRATOR_URL}/api/nodes/heartbeat", json=payload, headers=headers)
+            response = requests.post(f"{ORCHESTRATOR_URL}/api/nodes/heartbeat", json=payload, headers=headers)
+            
+            # If token expired, re-authenticate
+            if response.status_code == 401:
+                print("JWT Token expired. Renewing session...")
+                authenticate()
+                
         except Exception as e:
             pass # Suppress heartbeat errors to avoid spamming console if orchestrator is down
         time.sleep(10)
@@ -98,6 +120,7 @@ if __name__ == "__main__":
     print(f"Starting Bharat-Grid Node Client Daemon on {NODE_IP}:{NODE_PORT}...")
     print(f"Connecting to Orchestrator at: {ORCHESTRATOR_URL}")
     
+    authenticate()
     register_node()
     threading.Thread(target=heartbeat_loop, daemon=True).start()
     uvicorn.run(app, host="0.0.0.0", port=NODE_PORT)
